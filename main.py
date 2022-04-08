@@ -5,66 +5,96 @@ import datetime
 
 
 def check_followers():
-    URL = "https://api.twitch.tv/helix/users/follows"
-    access_token = os.environ['TOKEN']
-    to_id = os.environ['TO_ID']
-    client_id = os.environ['CLIENT_ID']
+    client_secret = os.getenv('CLIENT_SECRET')
+    to_id = os.getenv('TO_ID')
+    client_id = os.getenv('CLIENT_ID')
 
-    PARAMS = {
+    POST_PARAMS = {
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'grant_type': 'client_credentials'
+    }
+    auth_url = "https://id.twitch.tv/oauth2/token"
+    r = requests.request('POST', url=auth_url, params=POST_PARAMS)
+    access_token = r.json()['access_token']
+
+    print('access_token={}'.format(access_token))
+    print('to_id={}'.format(to_id))
+    print('client_id={}'.format(client_id))
+    print('client_secret={}'.format(client_secret))
+
+    follower_url = "https://api.twitch.tv/helix/users/follows"
+
+    GET_PARAMS = {
         'to_id': to_id,
         'first': 100,
         'after': ''
     }
 
-    followers = []
+    followers_map = {}
     while True:
-        r = requests.request('GET', url=URL, params=PARAMS, headers={
-            'Authorization': 'Bearer {}'.format(access_token),
-            'Client-Id': client_id
+        r = requests.request('GET', url=follower_url, params=GET_PARAMS, headers={
+            'Client-Id': client_id,
+            'Authorization': 'Bearer {}'.format(access_token)
         })
         json = r.json()
 
         for item in json['data']:
-            followers.append((item['from_name'], item['from_id']))
+            followers_map[item['from_id']] = item['from_name']
 
         pagination = json['pagination']
         if not pagination:
             break
-        PARAMS['after'] = pagination['cursor']
+        GET_PARAMS['after'] = pagination['cursor']
 
     last_followers_file = ''
     for f in os.listdir('.'):
         if f.endswith('.csv') and f > last_followers_file:
             last_followers_file = f
 
-    last_followers_list = []
+    last_followers_map = {}
     if last_followers_file:
         with open(last_followers_file, 'r') as f:
             for line in f.readlines():
-                last_followers_list.append(tuple(line.strip().split(',', 2)))
+                user = line.strip().split(',', 2)
+                last_followers_map[user[1]] = user[0]
 
-    followed = []
-    unfollowed = []
-    for f in last_followers_list:
-        if f not in followers:
-            unfollowed.append(f)
-    for f in followers:
-        if f not in last_followers_list:
-            followed.append(f)
+    followed = {}
+    unfollowed = {}
+    for user_id, user_name in last_followers_map.items():
+        if user_id not in followers_map:
+            unfollowed[user_id] = user_name
+    for user_id, user_name in followers_map.items():
+        if user_id not in last_followers_map:
+            followed[user_id] = user_name
 
-    print("followed:" + ', '.join(str(f) for f in followed))
-    print("unfollowed:" + ', '.join(str(f) for f in unfollowed))
+    print()
+    print("followed:")
+    if len(followed) == 0:
+        print('  None')
+    else:
+        for user_id, user_name in followed.items():
+            print('  {}: {}'.format(user_name, user_id))
+    print()
 
-    followers.sort(key=lambda x: x[1])
+    print("unfollowed:")
+    if len(unfollowed) == 0:
+        print('  None')
+    else:
+        for user_id, user_name in unfollowed.items():
+            print('  {}: {}'.format(user_name, user_id))
+    print()
+
     time = datetime.datetime.now()
     filename = time.strftime('%Y-%m-%d %H:%M:%S') + '-followers.csv'
     with open(filename, 'w+') as f:
-        writer = csv.writer(f)
-        for item in followers:
-            writer.writerow(item)
+        writer = csv.writer(f, quoting=csv.QUOTE_NONE)
+        for user_id in sorted(followers_map.keys()):
+            writer.writerow(tuple([followers_map[user_id], user_id]))
     print('there are currently {} followers. {} more than last time you checked.'.format(
-        len(followers), len(followers) - len(last_followers_list)))
+        len(followers_map), len(followers_map) - len(last_followers_map)))
     print('new file {} created.'.format(filename))
+    print()
 
 
 if __name__ == '__main__':
