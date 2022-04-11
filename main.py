@@ -1,32 +1,39 @@
+import json
+import logging
 import os
+import sys
 import requests
 import csv
 import datetime
 
+logging.basicConfig(format='%(asctime)s %(message)s',
+                    datefmt='%m/%d/%Y %I:%M:%S %p',
+                    filename='loggings.log',
+                    level=logging.DEBUG)
+
+from Context import Context
+
+
+def check_channel_emotes():
+    ctx = Context()
+
+    channel_emotes_url = "https://api.twitch.tv/helix/chat/emotes"
+    GET_PARAMS = {
+        'broadcaster_id': ctx.to_id
+    }
+    r = requests.request('GET', url=channel_emotes_url, params=GET_PARAMS, headers={
+        'Client-Id': ctx.client_id,
+        'Authorization': 'Bearer {}'.format(ctx.access_token)
+    })
+    logging.info(json.dumps(r.json(), indent=2))
+
 
 def check_followers():
-    client_secret = os.getenv('CLIENT_SECRET')
-    to_id = os.getenv('TO_ID')
-    client_id = os.getenv('CLIENT_ID')
-
-    POST_PARAMS = {
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'grant_type': 'client_credentials'
-    }
-    auth_url = "https://id.twitch.tv/oauth2/token"
-    r = requests.request('POST', url=auth_url, params=POST_PARAMS)
-    access_token = r.json()['access_token']
-
-    print('access_token={}'.format(access_token))
-    print('to_id={}'.format(to_id))
-    print('client_id={}'.format(client_id))
-    print('client_secret={}'.format(client_secret))
+    ctx = Context()
 
     follower_url = "https://api.twitch.tv/helix/users/follows"
-
     GET_PARAMS = {
-        'to_id': to_id,
+        'to_id': ctx.to_id,
         'first': 100,
         'after': ''
     }
@@ -34,8 +41,8 @@ def check_followers():
     followers_map = {}
     while True:
         r = requests.request('GET', url=follower_url, params=GET_PARAMS, headers={
-            'Client-Id': client_id,
-            'Authorization': 'Bearer {}'.format(access_token)
+            'Client-Id': ctx.client_id,
+            'Authorization': 'Bearer {}'.format(ctx.access_token)
         })
         json = r.json()
 
@@ -68,22 +75,19 @@ def check_followers():
         if user_id not in last_followers_map:
             followed[user_id] = user_name
 
-    print()
-    print("followed:")
+    logging.info("followed:")
     if len(followed) == 0:
-        print('  None')
+        logging.info('  None')
     else:
         for user_id, user_name in followed.items():
-            print('  {}: {}'.format(user_name, user_id))
-    print()
+            logging.info('  {}: {}'.format(user_name, user_id))
 
-    print("unfollowed:")
+    logging.info("unfollowed:")
     if len(unfollowed) == 0:
-        print('  None')
+        logging.info('  None')
     else:
         for user_id, user_name in unfollowed.items():
-            print('  {}: {}'.format(user_name, user_id))
-    print()
+            logging.info('  {}: {}'.format(user_name, user_id))
 
     time = datetime.datetime.now()
     filename = time.strftime('%Y-%m-%d %H:%M:%S') + '-followers.csv'
@@ -91,11 +95,26 @@ def check_followers():
         writer = csv.writer(f, quoting=csv.QUOTE_NONE)
         for user_id in sorted(followers_map.keys()):
             writer.writerow(tuple([followers_map[user_id], user_id]))
-    print('there are currently {} followers. {} more than last time you checked.'.format(
+    logging.info('there are currently {} followers. {} more than last time you checked.'.format(
         len(followers_map), len(followers_map) - len(last_followers_map)))
-    print('new file {} created.'.format(filename))
-    print()
+    logging.info('new file {} created.'.format(filename))
+
+
+def main():
+    if len(sys.argv) != 2:
+        logging.fatal('Must provide a run mode in the arguments.')
+        return
+
+    options = {
+        "FOLLOWERS": check_followers,
+        "CHANNEL_EMOTES": check_channel_emotes,
+    }
+
+    if sys.argv[1].upper() not in options:
+        logging.fatal('Run mode {} is not supported.'.format(sys.argv[1]))
+        return
+    options[sys.argv[1].upper()]()
 
 
 if __name__ == '__main__':
-    check_followers()
+    main()
