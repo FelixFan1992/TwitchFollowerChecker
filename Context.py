@@ -18,6 +18,7 @@ class Context:
         r = requests.request('POST', url=auth_url, params=POST_PARAMS)
         self.access_token = r.json()['access_token']
 
+        logging.info('\n')
         logging.info('access_token={}'.format(self.access_token))
         logging.info('to_id={}'.format(self.to_id))
         logging.info('client_id={}'.format(self.client_id))
